@@ -40,7 +40,7 @@ import config
 # ============================================================
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(SCRIPT_DIR, config.DB_NAME)
-FMP_BASE = "https://financialmodelingprep.com"
+FMP_BASE = "https://financialmodelingprep.com/stable"
 
 # ---------------------------------------------------------------------------
 # Signal Intelligence — live logging
@@ -147,7 +147,7 @@ def fmp_fetch(endpoint, params=None):
 
 def get_dividend_calendar(from_date, to_date):
     """Fetch dividend calendar from FMP for a date range."""
-    data = fmp_fetch("api/v3/stock_dividend_calendar", {
+    data = fmp_fetch("dividends-calendar", {
         'from': from_date,
         'to': to_date
     })
@@ -158,15 +158,15 @@ def get_dividend_calendar(from_date, to_date):
 
 def get_historical_dividends(ticker):
     """Fetch historical dividend data for a ticker."""
-    data = fmp_fetch(f"api/v3/historical-price-full/stock_dividend/{ticker}")
-    if data and isinstance(data, dict) and 'historical' in data:
-        return data['historical']
+    data = fmp_fetch("dividends", {"symbol": ticker})
+    if data and isinstance(data, list):
+        return data
     return []
 
 
 def get_quote(ticker):
     """Fetch current quote for a ticker."""
-    data = fmp_fetch(f"api/v3/quote/{ticker}")
+    data = fmp_fetch("quote", {"symbol": ticker})
     if data and isinstance(data, list) and len(data) > 0:
         return data[0]
     return None
@@ -174,11 +174,9 @@ def get_quote(ticker):
 
 def get_spy_history():
     """Fetch SPY price history for trailing return calculation."""
-    data = fmp_fetch("api/v3/historical-price-full/SPY", {
-        'serietype': 'line'
-    })
-    if data and isinstance(data, dict) and 'historical' in data:
-        return {d['date']: d['close'] for d in data['historical']}
+    data = fmp_fetch("historical-price-eod/full", {"symbol": "SPY"})
+    if data and isinstance(data, list):
+        return {d['date']: d['close'] for d in data}
     return {}
 
 
