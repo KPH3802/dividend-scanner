@@ -18,7 +18,10 @@ Key scoring factors from backtest:
   - 2000s/2020s decades show strongest alpha
 
 Schedule: PythonAnywhere 23:30 UTC daily
-Usage:   python3 dividend_initiation_scanner.py <FMP_API_KEY>
+Usage:   python3 dividend_initiation_scanner.py
+         (FMP API key is read from config.FMP_API_KEY, which falls back to the
+          FMP_API_KEY environment variable. The key is NEVER passed on the
+          command line — see get_api_key().)
 
 FMP Endpoints Used:
   - /stable/dividends-calendar (recent dividend declarations)
@@ -75,6 +78,29 @@ ETF_FUND_KEYWORDS = [
 # We scan the dividend calendar broadly, then filter
 SCAN_DAYS_BACK = 7  # Look at dividends declared in last 7 days
 SCAN_DAYS_FORWARD = 30  # And upcoming 30 days
+
+
+def get_api_key(cfg=None):
+    """Resolve the FMP API key from configuration — never from the command line.
+
+    Precedence: config.FMP_API_KEY, which config itself sources from the
+    FMP_API_KEY environment variable with a placeholder default. Passing the
+    key as a CLI argument is deliberately unsupported so the plaintext token
+    cannot appear in the PythonAnywhere scheduled-task command line (A13).
+
+    Raises SystemExit with actionable guidance if the key is unset or still the
+    placeholder. The key value itself is never logged or echoed.
+    """
+    if cfg is None:
+        import config as cfg
+    key = (getattr(cfg, "FMP_API_KEY", "") or "").strip()
+    if not key or key == "your_fmp_api_key_here":
+        raise SystemExit(
+            "FMP_API_KEY is not configured. Set FMP_API_KEY in config.py "
+            "(or export the FMP_API_KEY environment variable). "
+            "Do NOT pass the key on the command line."
+        )
+    return key
 
 
 def init_database():
@@ -495,11 +521,8 @@ def send_email(subject, html_body):
 
 
 def main():
-    if len(sys.argv) < 2:
-        print("Usage: python3 dividend_initiation_scanner.py <FMP_API_KEY>")
-        sys.exit(1)
-
-    api_key = sys.argv[1]
+    # FMP API key is read from config/env, not the command line (A13).
+    api_key = get_api_key()
     start_time = time.time()
 
     print("=" * 70)
