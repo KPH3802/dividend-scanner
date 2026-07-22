@@ -541,6 +541,24 @@ def send_email(subject, html_body):
         return False
 
 
+def log_scan_run(scanner, source_status, n_evaluated, n_fired=0, note='', db_path=None):
+    """One row per scanner run -> shared ~/signal_intelligence.db scan_runs table.
+
+    The div-init scanner had only a LOCAL scan_log, so a dead or empty run was invisible
+    in the cross-scanner monitor. This is the shared heartbeat. Loud on write failure,
+    never raises."""
+    try:
+        import sqlite3 as _sl
+        db = db_path or os.path.expanduser('~/signal_intelligence.db')
+        c = _sl.connect(db)
+        c.execute('CREATE TABLE IF NOT EXISTS scan_runs (id INTEGER PRIMARY KEY AUTOINCREMENT, ran_at TEXT DEFAULT CURRENT_TIMESTAMP, scanner TEXT, source_status TEXT, n_evaluated INTEGER, n_fired INTEGER, note TEXT)')
+        c.execute('INSERT INTO scan_runs (scanner, source_status, n_evaluated, n_fired, note) VALUES (?,?,?,?,?)',
+                  (scanner, source_status, n_evaluated, n_fired, note))
+        c.commit(); c.close()
+    except Exception as _sr_err:
+        print(f"[SCAN_RUN_FAIL] {scanner}: {type(_sr_err).__name__}: {_sr_err}", flush=True)
+
+
 def main():
     # FMP API key is read from config/env, not the command line (A13).
     api_key = get_api_key()
@@ -575,6 +593,7 @@ def main():
             (today.strftime("%Y-%m-%d"), duration)
         )
         conn.commit()
+        log_scan_run('DIV_INITIATION', 'EMPTY', 0, 0, note='empty calendar')
         conn.close()
         return
 
@@ -754,6 +773,8 @@ def main():
         first_ever_count, json.dumps(errors) if errors else None, duration
     ))
     conn.commit()
+    log_scan_run('DIV_INITIATION', 'ERROR' if errors else 'OK', checked, first_ever_count,
+                 note='')
 
     # Send email
     print(f"\n[6/6] SENDING EMAIL REPORT...")

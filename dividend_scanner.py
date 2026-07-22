@@ -57,8 +57,8 @@ def log_signal_intelligence(scan_date, scanner, ticker, direction, fired,
         c.execute('INSERT INTO signal_log (scan_date,scanner,ticker,direction,fired,signal_strength,signal_bucket,regime_filter_passed,regime_value,score) VALUES (?,?,?,?,?,?,?,?,?,?)',
                   (scan_date,scanner,ticker,direction,fired,signal_strength,signal_bucket,regime_filter_passed,regime_value,score))
         c.commit(); c.close()
-    except Exception:
-        pass
+    except Exception as _sl_err:
+        print(f"[SIGNAL_LOG_FAIL] {scanner} {ticker}: {type(_sl_err).__name__}: {_sl_err}", flush=True)
 
 # ============================================================
 # DATABASE
@@ -670,6 +670,24 @@ def send_email(subject, html_body):
 # ============================================================
 # MAIN SCANNER LOGIC
 # ============================================================
+def log_scan_run(scanner, source_status, n_evaluated, n_fired=0, note='', db_path=None):
+    """One row per scanner run -> shared ~/signal_intelligence.db scan_runs table.
+
+    The dividend Cut scanner had no shared run-level heartbeat, so an empty or dead run
+    was indistinguishable from a healthy quiet day in the cross-scanner monitor. Loud on
+    write failure, never raises."""
+    try:
+        import sqlite3 as _sl
+        db = db_path or os.path.expanduser('~/signal_intelligence.db')
+        c = _sl.connect(db)
+        c.execute('CREATE TABLE IF NOT EXISTS scan_runs (id INTEGER PRIMARY KEY AUTOINCREMENT, ran_at TEXT DEFAULT CURRENT_TIMESTAMP, scanner TEXT, source_status TEXT, n_evaluated INTEGER, n_fired INTEGER, note TEXT)')
+        c.execute('INSERT INTO scan_runs (scanner, source_status, n_evaluated, n_fired, note) VALUES (?,?,?,?,?)',
+                  (scanner, source_status, n_evaluated, n_fired, note))
+        c.commit(); c.close()
+    except Exception as _sr_err:
+        print(f"[SCAN_RUN_FAIL] {scanner}: {type(_sr_err).__name__}: {_sr_err}", flush=True)
+
+
 def run_scan(lookback_days=None):
     """Main scan: fetch calendar, detect cuts, score, store, email."""
     print(f"\n{'='*60}")
@@ -697,6 +715,7 @@ def run_scan(lookback_days=None):
         html = build_email_html([], recent)
         send_email(subject, html)
         log_scan(conn, 0, 0, 0, "No calendar entries")
+        log_scan_run('DIV_CUT', 'EMPTY', 0, 0, note='no calendar entries')
         conn.close()
         return
 
@@ -713,6 +732,7 @@ def run_scan(lookback_days=None):
         html = build_email_html([], recent)
         send_email(subject, html)
         log_scan(conn, len(calendar), 0, 0, "No cuts found")
+        log_scan_run('DIV_CUT', 'OK', len(calendar), 0, note='no cuts')
         conn.close()
         return
 
@@ -766,6 +786,8 @@ def run_scan(lookback_days=None):
     # Step 6: Log scan
     log_scan(conn, len(calendar), len(new_cuts), 1 if email_sent else 0,
              '; '.join(errors) if errors else '')
+    log_scan_run('DIV_CUT', 'ERROR' if errors else 'OK', len(calendar), len(new_cuts),
+                 note='; '.join(errors) if errors else '')
 
     print(f"\n{'='*60}")
     print(f"SCAN COMPLETE: {len(new_cuts)} new cuts scored and stored")
