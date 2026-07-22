@@ -103,6 +103,27 @@ def get_api_key(cfg=None):
     return key
 
 
+# ---------------------------------------------------------------------------
+# Signal Intelligence — live logging (merged from the PA production div-init
+# script, 2026-07-22). Writes one row per detected initiation to the shared
+# signal_intelligence.db. A failed write is surfaced, never swallowed.
+# ---------------------------------------------------------------------------
+def log_signal_intelligence(scan_date, scanner, ticker, direction, fired,
+                             signal_strength=None, signal_bucket=None,
+                             regime_filter_passed=None, regime_value=None,
+                             score=None):
+    try:
+        import sqlite3 as _sl
+        db = os.path.expanduser('~/signal_intelligence.db')
+        c = _sl.connect(db)
+        c.execute('CREATE TABLE IF NOT EXISTS signal_log (id INTEGER PRIMARY KEY AUTOINCREMENT, scan_date TEXT, scanner TEXT, ticker TEXT, direction TEXT, fired INTEGER, signal_strength REAL, signal_bucket TEXT, regime_filter_passed INTEGER, regime_value REAL, score INTEGER, autotrader_acted INTEGER, created_at TEXT DEFAULT CURRENT_TIMESTAMP)')
+        c.execute('INSERT INTO signal_log (scan_date,scanner,ticker,direction,fired,signal_strength,signal_bucket,regime_filter_passed,regime_value,score) VALUES (?,?,?,?,?,?,?,?,?,?)',
+                  (scan_date,scanner,ticker,direction,fired,signal_strength,signal_bucket,regime_filter_passed,regime_value,score))
+        c.commit(); c.close()
+    except Exception as _sl_err:
+        print(f"[SIGNAL_LOG_FAIL] {scanner} {ticker}: {type(_sl_err).__name__}: {_sl_err}", flush=True)
+
+
 def init_database():
     """Initialize SQLite database for storing initiation events."""
     conn = sqlite3.connect(DB_FILE)
@@ -667,6 +688,16 @@ def main():
         }
 
         initiations.append(init_record)
+        log_signal_intelligence(
+            scan_date=today.strftime("%Y-%m-%d"),
+            scanner='DIV_INITIATION',
+            ticker=ticker,
+            direction='BUY',
+            fired=1 if score >= 4 else 0,
+            signal_strength=div_amount,
+            signal_bucket=event_type,
+            score=score,
+        )
 
         # Store in database
         try:
